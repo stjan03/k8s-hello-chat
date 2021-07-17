@@ -1,4 +1,4 @@
-// A simple webserver that written in golang that publish...
+// A simple webserver written in golang that publish...
 //      /               Default page the publish "Hello world...
 //      /env            Publish the pod specific enviroment data in json format
 //      /health         Healthcheck "OK"
@@ -26,6 +26,7 @@ import (
         "log"
         "strings"
         "encoding/json"
+        dto "github.com/prometheus/client_model/go"
         "github.com/prometheus/client_golang/prometheus"
         "github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -35,8 +36,19 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
   fmt.Fprintln(w, "Hello kubernetes, world of containers...")
   fmt.Fprintln(w, " - Appversion: " + os.Getenv("APP_VERSION"))
   fmt.Fprintln(w, " - Hostname: " + os.Getenv("HOSTNAME"))
+
   podInfo.Inc()
-  //fmt.Fprintln(w, "PodInfo: " + podInfo.get())
+  b := getMetricValue(podInfo)
+  s := fmt.Sprintf("%v", b)
+  fmt.Fprintln(w, " - Page hits: " + s)
+}
+
+func getMetricValue(col prometheus.Collector) float64 {
+    c := make(chan prometheus.Metric, 1) // 1 for metric with no vector
+    col.Collect(c)                       // collect current metric value into the channel
+    m := dto.Metric{}
+    _ = (<-c).Write(&m)          // read metric value from the channel
+    return *m.Counter.Value
 }
 
 
