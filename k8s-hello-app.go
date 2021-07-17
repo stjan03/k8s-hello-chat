@@ -1,6 +1,6 @@
 // A simple webserver that written in golang that publish...
 //      /               Default page the publish "Hello world...
-//      /json           Publish the pod specific enviroment data in json format
+//      /env            Publish the pod specific enviroment data in json format
 //      /health         Healthcheck "OK"
 //      /metrics        Prometheus metrics
 
@@ -9,7 +9,7 @@
 //    APP_* is manually set
 //    K8S_* is automaticlly set by the pod deployment
 
-// Created by Stefan
+// Created by Stefan Jansson
 // 2021-07-17
 
 // Compile with...
@@ -24,15 +24,19 @@ import (
         "net/http"
         "os"
         "log"
-        //"encoding/json"
+        "strings"
+        "encoding/json"
         "github.com/prometheus/client_golang/prometheus"
         "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
-  fmt.Fprintln(w, "Hello world..." + os.Getenv("APP_TEXT"))
+  fmt.Fprintln(w, "Hello kubernetes, world of containers...")
+  fmt.Fprintln(w, " - Appversion: " + os.Getenv("APP_VERSION"))
+  fmt.Fprintln(w, " - Hostname: " + os.Getenv("HOSTNAME"))
   podInfo.Inc()
+  //fmt.Fprintln(w, "PodInfo: " + podInfo.get())
 }
 
 
@@ -41,28 +45,24 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
-func jsonHandler(w http.ResponseWriter, r *http.Request) {
+func envHandler(w http.ResponseWriter, r *http.Request) {
   w.Header().Set("Content-Type", "application/json")
-  w.Header().Set("Access-Control-Allow-Origin", "*")
-//      response := "{\n  \"Version\": \"" + os.Getenv("APP_VERSION") +
-//                    "\",\n  \"Text\": \"" + os.Getenv("APP_TEXT") +
-//                    "\",\n  \"Nodename\": \"" + os.Getenv("K8S_NODE_NAME") +
-//                    "\",\n  \"Podname\": \"" + os.Getenv("K8S_POD_NAME") +
-//                    "\",\n  \"Namespace\": \"" + os.Getenv("K8S_POD_NAMESPACE") +
-//                    "\",\n  \"PodIP\": \"" + os.Getenv("K8S_POD_IP") +
-//                    "\",\n  \"HostIP\": \"" + os.Getenv("K8S_HOST_IP") +
-//                    "\",\n  \"Serviceaccount\": \"" + os.Getenv("K8S_POD_SERVICE_ACCOUNT") +
-//                    "\",\n  \"Hostname\": \"" + os.Getenv("HOSTNAME") +
-//                    "\"\n}\n"
-  response := os.Environ()
-  fmt.Fprintf(w, response)
+  //w.Header().Set("Access-Control-Allow-Origin", "*")
+  m := make(map[string]string)
+  for _, e := range os.Environ() {
+    if i := strings.Index(e, "="); i >= 0 {
+      m[e[:i]] = e[i+1:]
+    }
+  }
+  env_json, _ := json.MarshalIndent(m, "", "\t")
+  fmt.Fprintf(w, string(env_json))
 }
 
 
 var (
   podInfo = prometheus.NewCounter(prometheus.CounterOpts{
     Name: "pod_info",
-    Help: "Pod information",
+    Help: "Number of pod hits",
     ConstLabels: prometheus.Labels{
       "hostname":  os.Getenv("HOSTNAME"),
       "appversion":  os.Getenv("APP_VERSION"),
@@ -78,11 +78,10 @@ func init() {
 
 func main() {
   http.HandleFunc("/", defaultHandler)
-  http.HandleFunc("/json", jsonHandler)
+  http.HandleFunc("/env", envHandler)
   http.HandleFunc("/health", healthHandler)
   http.Handle("/metrics", promhttp.Handler())
 
   log.Println("Listening on port 8080")
-  //log.Println(json.MarshalIndent(os.Environ()))
   log.Fatal(http.ListenAndServe(":8080", nil))
 }
